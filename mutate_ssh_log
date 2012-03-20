@@ -1,0 +1,314 @@
+#!/usr/bin/python
+import sys
+import re
+import fileinput
+import csv
+
+
+def check_and_replace(dictionary, name, value):
+    if value is None:
+        return
+
+    if name not in dictionary:
+        dictionary[name] = value
+        return
+
+    if dictionary[name] != value:
+        raise RuntimeError("Expected %s but got %s for %s"%(dictionary[name],value,name))
+
+
+def update_remain_details(remain, old_entry):
+        ok = False
+        auth = None
+        user = None
+        ip = None
+        port = None
+        success = None
+        new_entry = False
+
+        RE_IP = "[0-9:\.]+"
+        RE_HOST = "[a-z0-9\.-]+"
+        RE_USER = "[a-zA-Z0-9\.!@#_-]+\$?"
+
+        # CONNECTION OPENED/CLOSED
+        m = re.match('pam_unix\([a-z]+:session\): session (opened|closed) for user (%s)( by .*)?$'%RE_USER, remain)
+        if m is not None:
+            print "status,user %s,%s"%(m.group(1),m.group(2))
+            user = m.group(2)
+            ok = True
+
+        m = re.match('Received disconnect from (%s): (\d+:)?(.*)$'%RE_IP, remain)
+        if m is not None:
+            print "disconnect ip,reason %s,%s"%(m.group(1),m.group(3))
+            ip = m.group(1)
+            ok = True
+
+        m = re.match('Disconnecting: (.*)$', remain)
+        if m is not None:
+            print "disconnecting reason %s"%(m.group(1))
+            ok = True
+
+        m = re.match('connection closed ip (%s)$'%RE_IP, remain)
+        if m is not None:
+            print "connection closed ip %s"%(m.group(1))
+            ip = m.group(1)
+            ok = True
+
+        m = re.match('Connection closed by (%s)$'%RE_IP, remain)
+        if m is not None:
+            print "connection closed ip %s"%(m.group(1))
+            ip = m.group(1)
+            ok = True
+
+        m = re.match('Received signal 15; terminating.', remain)
+        if m is not None:
+            print "connection closed"
+            ok = True
+
+        m = re.match('fatal: Read from socket failed: Connection reset by peer', remain)
+        if m is not None:
+            print "connection closed"
+            ok = True
+
+
+        # AUTHENTICATION FAILED
+        m = re.match('pam_unix\([a-z]+:auth\): authentication failure; logname=(%s)? uid=\d+ euid=\d+ tty=[a-z]+ ruser=(%s)? rhost=%s *(user=(%s))?$'%(RE_USER,RE_USER,RE_HOST,RE_USER), remain)
+        if m is not None:
+            print "failed user %s"%(m.group(4))
+            user = m.group(2)
+            success = False
+            ok = True
+
+        m = re.match('pam_access\([a-z]+:account\): access denied for user `(%s)\' from `%s\'$'%(RE_USER,RE_HOST), remain)
+        if m is not None:
+            print "user %s"%(m.group(1))
+            user = m.group(1)
+            success = False
+            ok = True
+
+        m = re.match('PAM \d+ more authentication failure(s)?; logname=(%s)? uid=\d+ euid=\d+ tty=[a-z]+ ruser=(%s)? rhost=%s *(user=(%s))?$'%(RE_USER,RE_USER,RE_HOST,RE_USER), remain)
+        if m is not None:
+            print "failed user %s"%(m.group(5))
+            user = m.group(3)
+            success = False
+            ok = True
+
+        m = re.match('pam_unix\([a-z]+:auth\): check pass; user unknown$', remain)
+        if m is not None:
+            print "failed user pass"
+            ok = True
+
+        m = re.match('Failed password for (invalid user)? *(%s) from (%s) port \d+ ssh2$'%(RE_USER,RE_IP), remain)
+        if m is not None:
+            print "failed login invalid,user,ip %s,%s,%s"%(m.group(1),m.group(2),m.group(3))
+            user = m.group(2)
+            ip = m.group(3)
+            success = False
+            ok = True
+
+        m = re.match('pam_ldap: error trying to bind as user "uid=(%s), *ou=People, *dc=vlsci, *dc=unimelb, *dc=edu, *dc=au" \(Invalid credentials\)'%RE_USER, remain)
+        if m is not None:
+            print "failed login user %s"%(m.group(1))
+            user = m.group(1)
+            success = False
+            ok = True
+
+        m = re.match('Invalid user (%s) from (%s)$'%(RE_USER,RE_IP), remain)
+        if m is not None:
+            print "invalid user user,ip %s,%s"%(m.group(1),m.group(2))
+            user = m.group(1)
+            ip = m.group(2)
+            success = False
+            ok = True
+            new_entry = True
+
+        m = re.match('input_userauth_request: invalid user (%s)$'%RE_USER, remain)
+        if m is not None:
+            print "invalid user user %s"%(m.group(1))
+            user = m.group(1)
+            success = False
+            ok = True
+            new_entry = True
+
+        m = re.match('fatal: Access denied for user (%s) by PAM account configuration$'%RE_USER, remain)
+        if m is not None:
+            print "invalid user user %s"%(m.group(1))
+            user = m.group(1)
+            success = False
+            ok = True
+
+
+        # AUTHENTICATION PASSED
+        m = re.match('(Accepted|Postponed) (publickey|password) for (%s) from (%s) port (\d+) ssh2$'%(RE_USER,RE_IP), remain)
+        if m is not None:
+            print "what,type,user,ip,port %s,%s,%s,%s,%s"%(m.group(1),m.group(2),m.group(3),m.group(4),m.group(5))
+            auth = m.group(2)
+            user = m.group(3)
+            ip = m.group(4)
+            port = int(m.group(5))
+            success = True
+            ok = True
+
+            # Failure can be changed to success in a single connection
+            if old_entry and 'success' in old_entry and old_entry['success']==False:
+                del old_entry['success']
+
+        # OTHER RUBBISH
+        m = re.match('pam_succeed_if\([a-z]+:auth\): .*$', remain)
+        if m is not None:
+            ok = True
+
+        m = re.match('Address (%s) maps to (%s), but this does not map back to the address - POSSIBLE BREAK-IN ATTEMPT!$'%(RE_IP,RE_HOST), remain)
+        if m is not None:
+            ok = True
+
+        m = re.match('reverse mapping checking getaddrinfo for (%s) failed - POSSIBLE BREAK-IN ATTEMPT!$'%RE_HOST, remain)
+        if m is not None:
+            ok = True
+
+        m = re.match('Server listening on :: port (\d+)\.$', remain)
+        if m is not None:
+            ok = True
+
+        m = re.match('error: Bind to port (\d+) on 0\.0\.0\.0 failed: Address already in use\.$', remain)
+        if m is not None:
+            ok = True
+
+        m = re.match('Did not receive identification string from (%s)$'%RE_IP, remain)
+        if m is not None:
+            ip = m.group(1)
+            ok = True
+            new_entry = True
+
+        m = re.match('channel \d+: open failed: administratively prohibited: open failed$', remain)
+        if m is not None:
+            ok = True
+
+        m = re.match('session_input_channel_req: no session \d req %s@%s'%(RE_USER,RE_HOST), remain)
+        if m is not None:
+            ok = True
+
+        m = re.match('subsystem request for (sftp)$', remain)
+        if m is not None:
+            print "subsystem %s"%(m.group(1))
+            ok = True
+
+        if not ok:
+            print remain
+            mince_my_shorts()
+
+        print remain
+        print "%s,%s,%s"%(auth,ip,user)
+        print "--"
+
+        if old_entry:
+            # If IP or Port changed, assume this is a new login
+            if 'ip' in old_entry and ip is not None and old_entry['ip'] != ip:
+                new_entry = True
+            if 'port' in old_entry and port is not None and old_entry['port'] != port:
+                new_entry = True
+
+            # If success changed from good to bad, assume new login
+            if 'success' in old_entry and old_entry['success']==True and success==False:
+                del old_entry['success']
+
+        return ({
+            'user': user,
+            'auth': auth,
+            'success': success,
+            'ip': ip,
+            'port': port
+        }, new_entry)
+
+sshd = {}
+for line in fileinput.input():
+        ok = False
+
+        if not ok:
+            m = re.match('([A-Za-z]+ *\d+ \d+:\d+:\d+) ([a-z0-9-]+) ([a-z]+)(\[([0-9]+)\])?: (.*)$', line)
+            if m is not None:
+                ok = True
+                (time,host,process,pid,remain) = (m.group(1),m.group(2),m.group(3),m.group(5),m.group(6))
+                print pid
+                if pid is not None:
+                    pid = int(pid)
+
+                    if host not in sshd:
+                        sshd[host] = {}
+                    if process not in sshd[host]:
+                        sshd[host][process] = {}
+
+                    if pid not in sshd[host][process]:
+                        sshd[host][process][pid] = elist = []
+                    else:
+                        elist = sshd[host][process][pid]
+
+                    if len(elist)==0:
+                        old_entry = None
+                    else:
+                        old_entry = elist[-1]
+
+                    details,new_entry = update_remain_details(remain, old_entry)
+
+                    if not old_entry or new_entry:
+                        entry = {}
+                        elist.append(entry)
+                        entry["start"] = time
+                    else:
+                        entry = old_entry
+
+                    entry["end"] = time
+
+                    for dkey in details:
+                        check_and_replace(entry,dkey,details[dkey])
+
+
+        if not ok:
+            m = re.match('([A-Za-z]+ *\d+ \d+:\d+:\d+) last message repeated \d+ times$', line)
+            if m is not None:
+                ok = True
+
+        if not ok:
+            print "---------"
+            print line
+            eat_my_shorts()
+
+for host in sshd:
+    for process in sshd[host]:
+        for pid in sshd[host][process]:
+            for entry in sshd[host][process][pid]:
+                writer = csv.writer(sys.stdout)
+
+                if 'user' in entry:
+                    user = entry['user']
+                else:
+                    user = None
+
+                if 'auth' in entry:
+                    auth = entry['auth']
+                else:
+                    auth = None
+
+                if 'ip' in entry:
+                    ip = entry['ip']
+                else:
+                    ip = None
+
+                if 'success' in entry:
+                   success = entry['success']
+                else:
+                   success = None
+
+                if success:
+                    row = []
+                    row.append(entry["start"])
+                    row.append(entry["end"])
+                    row.append(pid)
+                    row.append(host)
+                    row.append(user)
+                    row.append(auth)
+                    row.append(ip)
+                    row.append(success)
+
+                    writer.writerow(row)
+
