@@ -24,7 +24,7 @@ def process_entry(time, host, remain):
         RE_USER = "[a-zA-Z0-9\.!@#_-]+\$?"
 
         # AUTHENTICATION PASSED
-        m = re.match('(Accepted|Postponed) (publickey|password) for (%s) from (%s) port (\d+) ssh2$'%(RE_USER,RE_IP), remain)
+        m = re.match('Accepted (publickey|password) for (%s) from (%s) port (\d+) ssh2$'%(RE_USER,RE_IP), remain)
         if m is not None:
             auth = m.group(2)
             user = m.group(3)
