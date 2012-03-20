@@ -47,15 +47,23 @@ for line in fileinput.input():
         if not ok:
             m = re.match('([A-Za-z]+ *\d+ \d+:\d+:\d+) ([a-z0-9-]+) ([a-z]+)(\[([0-9]+)\])?: (.*)$', line)
             if m is not None:
+                print line
                 ok = True
+                num = 1
                 (time, host, process, pid, remain) = (m.group(1),m.group(2),m.group(3),m.group(5),m.group(6))
                 process_entry(time, host, remain)
 
 
         if not ok:
-            m = re.match('([A-Za-z]+ *\d+ \d+:\d+:\d+) last message repeated \d+ times$', line)
+            m = re.match('([A-Za-z]+ *\d+ \d+:\d+:\d+) last message repeated (\d+) times$', line)
             if m is not None:
                 ok = True
+                time = m.group(1)
+                total_num = int(m.group(2))
+                if num is not None:
+                    while num < total_num:
+                        process_entry(time, host, remain)
+                        num = num + 1
 
         if not ok:
             print "---------"
