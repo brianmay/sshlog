@@ -26,10 +26,10 @@ def process_entry(time, host, remain):
         # AUTHENTICATION PASSED
         m = re.match('Accepted (publickey|password) for (%s) from (%s) port (\d+) ssh2$'%(RE_USER,RE_IP), remain)
         if m is not None:
-            auth = m.group(2)
-            user = m.group(3)
-            ip = m.group(4)
-            port = int(m.group(5))
+            auth = m.group(1)
+            user = m.group(2)
+            ip = m.group(3)
+            port = int(m.group(4))
             success = True
             ok = True
 
