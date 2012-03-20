@@ -30,12 +30,15 @@ def process_entry(time, host, remain):
             user = m.group(2)
             ip = m.group(3)
             port = int(m.group(4))
-            success = True
-            ok = True
 
             country = gi.country_code_by_addr(ip)
             print "%s %s %s %s %s %s"%(time, host, user, ip, country, auth)
 
+
+num = None
+time = None
+host = None
+remain = None
 
 sshd = {}
 for line in fileinput.input():
