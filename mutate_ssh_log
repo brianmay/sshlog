@@ -47,7 +47,6 @@ for line in fileinput.input():
         if not ok:
             m = re.match('([A-Za-z]+ *\d+ \d+:\d+:\d+) ([a-z0-9-]+) ([a-z]+)(\[([0-9]+)\])?: (.*)$', line)
             if m is not None:
-                print line
                 ok = True
                 num = 1
                 (time, host, process, pid, remain) = (m.group(1),m.group(2),m.group(3),m.group(5),m.group(6))
