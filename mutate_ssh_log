@@ -1,8 +1,16 @@
 #!/usr/bin/python
+import xmlrpclib
 import re
 import fileinput
 import GeoIP
+import ipaddr
+import ConfigParser
 
+
+CONFIG_FILE = 'mutate_ssh_log.cfg'
+config = ConfigParser.RawConfigParser()
+config.read(CONFIG_FILE)
+server = xmlrpclib.Server(config.get('Default', 'WS_URL'))
 
 gi = GeoIP.new(GeoIP.GEOIP_MEMORY_CACHE)
 
@@ -27,13 +35,19 @@ def process_entry(time, host, remain):
         m = re.match('Accepted (publickey|password) for (%s) from (%s) port (\d+) ssh2$'%(RE_USER,RE_IP), remain)
         if m is not None:
             auth = m.group(1)
-            user = m.group(2)
+            username = m.group(2)
             ip = m.group(3)
             port = int(m.group(4))
 
             country = gi.country_code_by_addr(ip)
-            print "%s %s %s %s %s %s"%(time, host, user, ip, country, auth)
+            subnet = ipaddr.IPv4Network("%s/%d"%(ip, gi.last_netmask()))
+            org = "%s/%s"%(subnet.network,subnet.prefixlen)
+            print "%s %s %s %s %s %s %s"%(time, host, username, auth, ip, country, org)
 
+            rpc_username = config.get('Default', 'WS_USERNAME')
+            rpc_password = config.get('Default', 'WS_PASSWORD')
+            output = server.user_account_log(rpc_username, rpc_password, time, host, username, auth, ip)
+            print output
 
 num = None
 time = None
