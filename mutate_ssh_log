@@ -14,18 +14,6 @@ server = xmlrpclib.Server(config.get('Default', 'WS_URL'))
 
 gi = GeoIP.new(GeoIP.GEOIP_MEMORY_CACHE)
 
-def check_and_replace(dictionary, name, value):
-    if value is None:
-        return
-
-    if name not in dictionary:
-        dictionary[name] = value
-        return
-
-    if dictionary[name] != value:
-        raise RuntimeError("Expected %s but got %s for %s"%(dictionary[name],value,name))
-
-
 def process_entry(time, host, remain):
         RE_IP = "[0-9:\.]+"
         RE_HOST = "[a-z0-9\.-]+"
